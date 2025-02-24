@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2023, The Monero Project
+// Copyright (c) 2016-2024, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -281,7 +281,7 @@ void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::error& error);
 void toJsonValue(rapidjson::Writer<epee::byte_stream>& dest, const cryptonote::rpc::BlockHeaderResponse& response);
 void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::BlockHeaderResponse& response);
 
-void toJsonValue(rapidjson::Writer<epee::byte_stream>& dest, const rct::rctSig& i);
+void toJsonValue(rapidjson::Writer<epee::byte_stream>& dest, const rct::rctSig& sig, bool prune);
 void fromJsonValue(const rapidjson::Value& val, rct::rctSig& sig);
 
 void fromJsonValue(const rapidjson::Value& val, rct::ctkey& key);
@@ -303,6 +303,9 @@ void fromJsonValue(const rapidjson::Value& val, rct::boroSig& sig);
 
 void toJsonValue(rapidjson::Writer<epee::byte_stream>& dest, const rct::mgSig& sig);
 void fromJsonValue(const rapidjson::Value& val, rct::mgSig& sig);
+
+void toJsonValue(rapidjson::Writer<epee::byte_stream>& dest, const rct::clsag& sig);
+void fromJsonValue(const rapidjson::Value& val, rct::clsag& sig);
 
 void toJsonValue(rapidjson::Writer<epee::byte_stream>& dest, const cryptonote::rpc::DaemonInfo& info);
 void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::DaemonInfo& info);

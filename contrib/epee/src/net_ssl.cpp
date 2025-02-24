@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2023, The Monero Project
+// Copyright (c) 2018-2024, The Monero Project
 
 // 
 // All rights reserved.
@@ -29,6 +29,7 @@
 
 #include <string.h>
 #include <thread>
+#include <boost/asio/post.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <boost/cerrno.hpp>
@@ -45,6 +46,13 @@
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "net.ssl"
+
+
+#if BOOST_VERSION >= 107300
+  #define MONERO_HOSTNAME_VERIFY boost::asio::ssl::host_name_verification
+#else
+  #define MONERO_HOSTNAME_VERIFY boost::asio::ssl::rfc2818_verification
+#endif
 
 // openssl genrsa -out /tmp/KEY 4096
 // openssl req -new -key /tmp/KEY -out /tmp/REQ
@@ -497,6 +505,13 @@ void ssl_options_t::configure(
   const std::string& host) const
 {
   socket.next_layer().set_option(boost::asio::ip::tcp::no_delay(true));
+  {
+    // in case server is doing "virtual" domains, set hostname
+    SSL* const ssl_ctx = socket.native_handle();
+    if (type == boost::asio::ssl::stream_base::client && !host.empty() && ssl_ctx)
+      SSL_set_tlsext_host_name(ssl_ctx, host.c_str());
+  }
+
 
   /* Using system-wide CA store for client verification is funky - there is
      no expected hostname for server to verify against. If server doesn't have
@@ -514,17 +529,13 @@ void ssl_options_t::configure(
   {
     socket.set_verify_mode(boost::asio::ssl::verify_peer | boost::asio::ssl::verify_fail_if_no_peer_cert);
 
-    // in case server is doing "virtual" domains, set hostname
-    SSL* const ssl_ctx = socket.native_handle();
-    if (type == boost::asio::ssl::stream_base::client && !host.empty() && ssl_ctx)
-      SSL_set_tlsext_host_name(ssl_ctx, host.c_str());
-
+    
     socket.set_verify_callback([&](const bool preverified, boost::asio::ssl::verify_context &ctx)
     {
       // preverified means it passed system or user CA check. System CA is never loaded
       // when fingerprints are whitelisted.
       const bool verified = preverified &&
-        (verification != ssl_verification_t::system_ca || host.empty() || boost::asio::ssl::rfc2818_verification(host)(preverified, ctx));
+        (verification != ssl_verification_t::system_ca || host.empty() || MONERO_HOSTNAME_VERIFY(host)(preverified, ctx));
 
       if (!verified && !has_fingerprint(ctx))
       {
@@ -542,6 +553,7 @@ void ssl_options_t::configure(
 }
 
 bool ssl_options_t::handshake(
+  boost::asio::io_context& io_context,
   boost::asio::ssl::stream<boost::asio::ip::tcp::socket> &socket,
   boost::asio::ssl::stream_base::handshake_type type,
   boost::asio::const_buffer buffer,
@@ -553,12 +565,11 @@ bool ssl_options_t::handshake(
   auto start_handshake = [&]{
     using ec_t = boost::system::error_code;
     using timer_t = boost::asio::steady_timer;
-    using strand_t = boost::asio::io_service::strand;
+    using strand_t = boost::asio::io_context::strand;
     using socket_t = boost::asio::ip::tcp::socket;
 
-    auto &io_context = GET_IO_SERVICE(socket);
     if (io_context.stopped())
-      io_context.reset();
+      io_context.restart();
     strand_t strand(io_context);
     timer_t deadline(io_context, timeout);
 
@@ -593,13 +604,13 @@ bool ssl_options_t::handshake(
       state.result = ec;
       if (!state.cancel_handshake) {
         state.cancel_timer = true;
-        ec_t ec;
-        deadline.cancel(ec);
+        deadline.cancel();
       }
     };
 
     deadline.async_wait(on_timer);
-    strand.post(
+    boost::asio::post(
+      strand,
       [&]{
         socket.async_handshake(
           type,
@@ -639,6 +650,56 @@ bool ssl_options_t::handshake(
   }
   MDEBUG("SSL handshake success");
   return true;
+}
+
+std::string get_hr_ssl_fingerprint(const X509 *cert, const EVP_MD *fdig)
+{
+  unsigned int j;
+  unsigned int n;
+  unsigned char md[EVP_MAX_MD_SIZE];
+  std::string fingerprint;
+
+  CHECK_AND_ASSERT_THROW_MES(cert && fdig, "Pointer args to get_hr_ssl_fingerprint cannot be null");
+
+  if (!X509_digest(cert, fdig, md, &n))
+  {
+    const unsigned long ssl_err_val = static_cast<int>(ERR_get_error());
+    const boost::system::error_code ssl_err_code = boost::asio::error::ssl_errors(static_cast<int>(ssl_err_val));
+    MERROR("Failed to create SSL fingerprint: " << ERR_reason_error_string(ssl_err_val));
+    throw boost::system::system_error(ssl_err_code, ERR_reason_error_string(ssl_err_val));
+  }
+  fingerprint.resize(n * 3 - 1);
+  char *out = &fingerprint[0];
+  for (j = 0; j < n; ++j)
+  {
+    snprintf(out, 3 + (j + 1 < n), "%02X%s", md[j], (j + 1 == n) ? "" : ":");
+    out += 3;
+  }
+  return fingerprint;
+}
+
+std::string get_hr_ssl_fingerprint_from_file(const std::string& cert_path, const EVP_MD *fdig) {
+  // Open file for reading
+  FILE* fp = fopen(cert_path.c_str(), "r");
+  if (!fp)
+  {
+    const boost::system::error_code err_code(errno, boost::system::system_category());
+    throw boost::system::system_error(err_code, "Failed to open certificate file '" + cert_path + "'");
+  }
+  std::unique_ptr<FILE, decltype(&fclose)> file(fp, &fclose);
+
+  // Extract certificate structure from file
+  X509* ssl_cert_handle = PEM_read_X509(file.get(), NULL, NULL, NULL);
+  if (!ssl_cert_handle) {
+    const unsigned long ssl_err_val = static_cast<int>(ERR_get_error());
+    const boost::system::error_code ssl_err_code = boost::asio::error::ssl_errors(static_cast<int>(ssl_err_val));
+    MERROR("OpenSSL error occurred while loading certificate at '" + cert_path + "'");
+    throw boost::system::system_error(ssl_err_code, ERR_reason_error_string(ssl_err_val));
+  }
+  std::unique_ptr<X509, decltype(&X509_free)> ssl_cert(ssl_cert_handle, &X509_free);
+
+  // Get the fingerprint from X509 structure
+  return get_hr_ssl_fingerprint(ssl_cert.get(), fdig);
 }
 
 bool ssl_support_from_string(ssl_support_t &ssl, boost::string_ref s)
@@ -705,6 +766,29 @@ boost::system::error_code store_ssl_keys(boost::asio::ssl::context& ssl, const b
     return boost::asio::error::ssl_errors(ERR_get_error());
   if (std::fclose(file.release()) != 0)
     return {errno, boost::system::system_category()};
+
+  // write SHA-256 fingerprint file
+  const boost::filesystem::path fp_file{base.string() + ".fingerprint"};
+  file.reset(std::fopen(fp_file.string().c_str(), "w"));
+  if (!file)
+    return {errno, boost::system::system_category()};
+  const auto fp_perms = (boost::filesystem::owner_read | boost::filesystem::group_read | boost::filesystem::others_read);
+  boost::filesystem::permissions(fp_file, fp_perms, error);
+  if (error)
+    return error;
+  try
+  {
+    const std::string fingerprint = get_hr_ssl_fingerprint(ssl_cert);
+    if (fingerprint.length() != fwrite(fingerprint.c_str(), sizeof(char), fingerprint.length(), file.get()))
+      return {errno, boost::system::system_category()};
+  }
+  catch (const boost::system::system_error& fperr)
+  {
+    return fperr.code();
+  }
+  if (std::fclose(file.release()) != 0)
+    return {errno, boost::system::system_category()};
+
   return error;
 }
 

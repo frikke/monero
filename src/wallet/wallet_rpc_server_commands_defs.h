@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2023, The Monero Project
+// Copyright (c) 2014-2024, The Monero Project
 // 
 // All rights reserved.
 // 
@@ -47,7 +47,7 @@
 // advance which version they will stop working with
 // Don't go over 32767 for any of these
 #define WALLET_RPC_VERSION_MAJOR 1
-#define WALLET_RPC_VERSION_MINOR 26
+#define WALLET_RPC_VERSION_MINOR 28
 #define MAKE_WALLET_RPC_VERSION(major,minor) (((major)<<16)|(minor))
 #define WALLET_RPC_VERSION MAKE_WALLET_RPC_VERSION(WALLET_RPC_VERSION_MAJOR, WALLET_RPC_VERSION_MINOR)
 namespace tools
@@ -68,8 +68,8 @@ namespace wallet_rpc
       BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(account_index)
         KV_SERIALIZE(address_indices)
-        KV_SERIALIZE_OPT(all_accounts, false);
-        KV_SERIALIZE_OPT(strict, false);
+        KV_SERIALIZE_OPT(all_accounts, false)
+        KV_SERIALIZE_OPT(strict, false)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<request_t> request;
@@ -348,9 +348,9 @@ namespace wallet_rpc
       std::vector<uint32_t> accounts;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(tag);
-        KV_SERIALIZE(label);
-        KV_SERIALIZE(accounts);
+        KV_SERIALIZE(tag)
+        KV_SERIALIZE(label)
+        KV_SERIALIZE(accounts)
       END_KV_SERIALIZE_MAP()
     };
 
@@ -530,6 +530,46 @@ namespace wallet_rpc
     END_KV_SERIALIZE_MAP()
   };
 
+  struct amounts_list
+  {
+    std::list<uint64_t> amounts;
+
+    bool operator==(const amounts_list& other) const { return amounts == other.amounts; }
+
+    BEGIN_KV_SERIALIZE_MAP()
+      KV_SERIALIZE(amounts)
+    END_KV_SERIALIZE_MAP()
+  };
+
+  struct single_transfer_response
+  {
+    std::string tx_hash;
+    std::string tx_key;
+    uint64_t amount;
+    amounts_list amounts_by_dest;
+    uint64_t fee;
+    uint64_t weight;
+    std::string tx_blob;
+    std::string tx_metadata;
+    std::string multisig_txset;
+    std::string unsigned_txset;
+    key_image_list spent_key_images;
+
+    BEGIN_KV_SERIALIZE_MAP()
+      KV_SERIALIZE(tx_hash)
+      KV_SERIALIZE(tx_key)
+      KV_SERIALIZE(amount)
+      KV_SERIALIZE_OPT(amounts_by_dest, decltype(amounts_by_dest)())
+      KV_SERIALIZE(fee)
+      KV_SERIALIZE(weight)
+      KV_SERIALIZE(tx_blob)
+      KV_SERIALIZE(tx_metadata)
+      KV_SERIALIZE(multisig_txset)
+      KV_SERIALIZE(unsigned_txset)
+      KV_SERIALIZE(spent_key_images)
+    END_KV_SERIALIZE_MAP()
+  };
+
   struct COMMAND_RPC_TRANSFER
   {
     struct request_t
@@ -537,6 +577,7 @@ namespace wallet_rpc
       std::list<transfer_destination> destinations;
       uint32_t account_index;
       std::set<uint32_t> subaddr_indices;
+      std::set<uint32_t> subtract_fee_from_outputs;
       uint32_t priority;
       uint64_t ring_size;
       uint64_t unlock_time;
@@ -550,6 +591,7 @@ namespace wallet_rpc
         KV_SERIALIZE(destinations)
         KV_SERIALIZE(account_index)
         KV_SERIALIZE(subaddr_indices)
+        KV_SERIALIZE_OPT(subtract_fee_from_outputs, decltype(subtract_fee_from_outputs)())
         KV_SERIALIZE(priority)
         KV_SERIALIZE_OPT(ring_size, (uint64_t)0)
         KV_SERIALIZE(unlock_time)
@@ -562,33 +604,37 @@ namespace wallet_rpc
     };
     typedef epee::misc_utils::struct_init<request_t> request;
 
-    struct response_t
-    {
-      std::string tx_hash;
-      std::string tx_key;
-      uint64_t amount;
-      uint64_t fee;
-      uint64_t weight;
-      std::string tx_blob;
-      std::string tx_metadata;
-      std::string multisig_txset;
-      std::string unsigned_txset;
-      key_image_list spent_key_images;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(tx_hash)
-        KV_SERIALIZE(tx_key)
-        KV_SERIALIZE(amount)
-        KV_SERIALIZE(fee)
-        KV_SERIALIZE(weight)
-        KV_SERIALIZE(tx_blob)
-        KV_SERIALIZE(tx_metadata)
-        KV_SERIALIZE(multisig_txset)
-        KV_SERIALIZE(unsigned_txset)
-        KV_SERIALIZE(spent_key_images)
-      END_KV_SERIALIZE_MAP()
-    };
+    typedef single_transfer_response response_t;
     typedef epee::misc_utils::struct_init<response_t> response;
+  };
+
+  struct split_transfer_response
+  {
+    std::list<std::string> tx_hash_list;
+    std::list<std::string> tx_key_list;
+    std::list<uint64_t> amount_list;
+    std::list<amounts_list> amounts_by_dest_list;
+    std::list<uint64_t> fee_list;
+    std::list<uint64_t> weight_list;
+    std::list<std::string> tx_blob_list;
+    std::list<std::string> tx_metadata_list;
+    std::string multisig_txset;
+    std::string unsigned_txset;
+    std::list<key_image_list> spent_key_images_list;
+
+    BEGIN_KV_SERIALIZE_MAP()
+      KV_SERIALIZE(tx_hash_list)
+      KV_SERIALIZE(tx_key_list)
+      KV_SERIALIZE(amount_list)
+      KV_SERIALIZE_OPT(amounts_by_dest_list, decltype(amounts_by_dest_list)())
+      KV_SERIALIZE(fee_list)
+      KV_SERIALIZE(weight_list)
+      KV_SERIALIZE(tx_blob_list)
+      KV_SERIALIZE(tx_metadata_list)
+      KV_SERIALIZE(multisig_txset)
+      KV_SERIALIZE(unsigned_txset)
+      KV_SERIALIZE(spent_key_images_list)
+    END_KV_SERIALIZE_MAP()
   };
 
   struct COMMAND_RPC_TRANSFER_SPLIT
@@ -623,41 +669,7 @@ namespace wallet_rpc
     };
     typedef epee::misc_utils::struct_init<request_t> request;
 
-    struct key_list
-    {
-      std::list<std::string> keys;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(keys)
-      END_KV_SERIALIZE_MAP()
-    };
-
-    struct response_t
-    {
-      std::list<std::string> tx_hash_list;
-      std::list<std::string> tx_key_list;
-      std::list<uint64_t> amount_list;
-      std::list<uint64_t> fee_list;
-      std::list<uint64_t> weight_list;
-      std::list<std::string> tx_blob_list;
-      std::list<std::string> tx_metadata_list;
-      std::string multisig_txset;
-      std::string unsigned_txset;
-      std::list<key_image_list> spent_key_images_list;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(tx_hash_list)
-        KV_SERIALIZE(tx_key_list)
-        KV_SERIALIZE(amount_list)
-        KV_SERIALIZE(fee_list)
-        KV_SERIALIZE(weight_list)
-        KV_SERIALIZE(tx_blob_list)
-        KV_SERIALIZE(tx_metadata_list)
-        KV_SERIALIZE(multisig_txset)
-        KV_SERIALIZE(unsigned_txset)
-        KV_SERIALIZE(spent_key_images_list)
-      END_KV_SERIALIZE_MAP()
-    };
+    typedef split_transfer_response response_t;
     typedef epee::misc_utils::struct_init<response_t> response;
   };
 
@@ -821,41 +833,7 @@ namespace wallet_rpc
     };
     typedef epee::misc_utils::struct_init<request_t> request;
 
-    struct key_list
-    {
-      std::list<std::string> keys;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(keys)
-      END_KV_SERIALIZE_MAP()
-    };
-
-    struct response_t
-    {
-      std::list<std::string> tx_hash_list;
-      std::list<std::string> tx_key_list;
-      std::list<uint64_t> amount_list;
-      std::list<uint64_t> fee_list;
-      std::list<uint64_t> weight_list;
-      std::list<std::string> tx_blob_list;
-      std::list<std::string> tx_metadata_list;
-      std::string multisig_txset;
-      std::string unsigned_txset;
-      std::list<key_image_list> spent_key_images_list;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(tx_hash_list)
-        KV_SERIALIZE(tx_key_list)
-        KV_SERIALIZE(amount_list)
-        KV_SERIALIZE(fee_list)
-        KV_SERIALIZE(weight_list)
-        KV_SERIALIZE(tx_blob_list)
-        KV_SERIALIZE(tx_metadata_list)
-        KV_SERIALIZE(multisig_txset)
-        KV_SERIALIZE(unsigned_txset)
-        KV_SERIALIZE(spent_key_images_list)
-      END_KV_SERIALIZE_MAP()
-    };
+    typedef split_transfer_response response_t;
     typedef epee::misc_utils::struct_init<response_t> response;
   };
 
@@ -897,41 +875,7 @@ namespace wallet_rpc
     };
     typedef epee::misc_utils::struct_init<request_t> request;
 
-    struct key_list
-    {
-      std::list<std::string> keys;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(keys)
-      END_KV_SERIALIZE_MAP()
-    };
-
-    struct response_t
-    {
-      std::list<std::string> tx_hash_list;
-      std::list<std::string> tx_key_list;
-      std::list<uint64_t> amount_list;
-      std::list<uint64_t> fee_list;
-      std::list<uint64_t> weight_list;
-      std::list<std::string> tx_blob_list;
-      std::list<std::string> tx_metadata_list;
-      std::string multisig_txset;
-      std::string unsigned_txset;
-      std::list<key_image_list> spent_key_images_list;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(tx_hash_list)
-        KV_SERIALIZE(tx_key_list)
-        KV_SERIALIZE(amount_list)
-        KV_SERIALIZE(fee_list)
-        KV_SERIALIZE(weight_list)
-        KV_SERIALIZE(tx_blob_list)
-        KV_SERIALIZE(tx_metadata_list)
-        KV_SERIALIZE(multisig_txset)
-        KV_SERIALIZE(unsigned_txset)
-        KV_SERIALIZE(spent_key_images_list)
-      END_KV_SERIALIZE_MAP()
-    };
+    typedef split_transfer_response response_t;
     typedef epee::misc_utils::struct_init<response_t> response;
   };
 
@@ -967,32 +911,7 @@ namespace wallet_rpc
     };
     typedef epee::misc_utils::struct_init<request_t> request;
 
-    struct response_t
-    {
-      std::string tx_hash;
-      std::string tx_key;
-      uint64_t amount;
-      uint64_t fee;
-      uint64_t weight;
-      std::string tx_blob;
-      std::string tx_metadata;
-      std::string multisig_txset;
-      std::string unsigned_txset;
-      key_image_list spent_key_images;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(tx_hash)
-        KV_SERIALIZE(tx_key)
-        KV_SERIALIZE(amount)
-        KV_SERIALIZE(fee)
-        KV_SERIALIZE(weight)
-        KV_SERIALIZE(tx_blob)
-        KV_SERIALIZE(tx_metadata)
-        KV_SERIALIZE(multisig_txset)
-        KV_SERIALIZE(unsigned_txset)
-        KV_SERIALIZE(spent_key_images)
-      END_KV_SERIALIZE_MAP()
-    };
+    typedef single_transfer_response response_t;
     typedef epee::misc_utils::struct_init<response_t> response;
   };
 
@@ -1127,7 +1046,7 @@ namespace wallet_rpc
       KV_SERIALIZE(tx_hash)
       KV_SERIALIZE(subaddr_index)
       KV_SERIALIZE(key_image)
-      KV_SERIALIZE(pubkey);
+      KV_SERIALIZE(pubkey)
       KV_SERIALIZE(block_height)
       KV_SERIALIZE(frozen)
       KV_SERIALIZE(unlocked)
@@ -1263,7 +1182,7 @@ namespace wallet_rpc
       bool hard;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE_OPT(hard, false);
+        KV_SERIALIZE_OPT(hard, false)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<request_t> request;
@@ -1506,21 +1425,21 @@ namespace wallet_rpc
     uint64_t suggested_confirmations_threshold;
 
     BEGIN_KV_SERIALIZE_MAP()
-      KV_SERIALIZE(txid);
-      KV_SERIALIZE(payment_id);
-      KV_SERIALIZE(height);
-      KV_SERIALIZE(timestamp);
-      KV_SERIALIZE(amount);
-      KV_SERIALIZE(amounts);
-      KV_SERIALIZE(fee);
-      KV_SERIALIZE(note);
-      KV_SERIALIZE(destinations);
-      KV_SERIALIZE(type);
+      KV_SERIALIZE(txid)
+      KV_SERIALIZE(payment_id)
+      KV_SERIALIZE(height)
+      KV_SERIALIZE(timestamp)
+      KV_SERIALIZE(amount)
+      KV_SERIALIZE(amounts)
+      KV_SERIALIZE(fee)
+      KV_SERIALIZE(note)
+      KV_SERIALIZE(destinations)
+      KV_SERIALIZE(type)
       KV_SERIALIZE(unlock_time)
       KV_SERIALIZE(locked)
-      KV_SERIALIZE(subaddr_index);
-      KV_SERIALIZE(subaddr_indices);
-      KV_SERIALIZE(address);
+      KV_SERIALIZE(subaddr_index)
+      KV_SERIALIZE(subaddr_indices)
+      KV_SERIALIZE(address)
       KV_SERIALIZE(double_spend_seen)
       KV_SERIALIZE_OPT(confirmations, (uint64_t)0)
       KV_SERIALIZE_OPT(suggested_confirmations_threshold, (uint64_t)0)
@@ -1657,17 +1576,17 @@ namespace wallet_rpc
       bool all_accounts;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(in);
-        KV_SERIALIZE(out);
-        KV_SERIALIZE(pending);
-        KV_SERIALIZE(failed);
-        KV_SERIALIZE(pool);
-        KV_SERIALIZE(filter_by_height);
-        KV_SERIALIZE(min_height);
-        KV_SERIALIZE_OPT(max_height, (uint64_t)CRYPTONOTE_MAX_BLOCK_NUMBER);
-        KV_SERIALIZE(account_index);
-        KV_SERIALIZE(subaddr_indices);
-        KV_SERIALIZE_OPT(all_accounts, false);
+        KV_SERIALIZE(in)
+        KV_SERIALIZE(out)
+        KV_SERIALIZE(pending)
+        KV_SERIALIZE(failed)
+        KV_SERIALIZE(pool)
+        KV_SERIALIZE(filter_by_height)
+        KV_SERIALIZE(min_height)
+        KV_SERIALIZE_OPT(max_height, (uint64_t)CRYPTONOTE_MAX_BLOCK_NUMBER)
+        KV_SERIALIZE(account_index)
+        KV_SERIALIZE(subaddr_indices)
+        KV_SERIALIZE_OPT(all_accounts, false)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<request_t> request;
@@ -1681,11 +1600,11 @@ namespace wallet_rpc
       std::list<transfer_entry> pool;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(in);
-        KV_SERIALIZE(out);
-        KV_SERIALIZE(pending);
-        KV_SERIALIZE(failed);
-        KV_SERIALIZE(pool);
+        KV_SERIALIZE(in)
+        KV_SERIALIZE(out)
+        KV_SERIALIZE(pending)
+        KV_SERIALIZE(failed)
+        KV_SERIALIZE(pool)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<response_t> response;
@@ -1699,7 +1618,7 @@ namespace wallet_rpc
       uint32_t account_index;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(txid);
+        KV_SERIALIZE(txid)
         KV_SERIALIZE_OPT(account_index, (uint32_t)0)
       END_KV_SERIALIZE_MAP()
     };
@@ -1711,8 +1630,8 @@ namespace wallet_rpc
       std::list<transfer_entry> transfers;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(transfer);
-        KV_SERIALIZE(transfers);
+        KV_SERIALIZE(transfer)
+        KV_SERIALIZE(transfers)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<response_t> response;
@@ -1741,7 +1660,7 @@ namespace wallet_rpc
       std::string signature;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(signature);
+        KV_SERIALIZE(signature)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<response_t> response;
@@ -1756,9 +1675,9 @@ namespace wallet_rpc
       std::string signature;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(data);
-        KV_SERIALIZE(address);
-        KV_SERIALIZE(signature);
+        KV_SERIALIZE(data)
+        KV_SERIALIZE(address)
+        KV_SERIALIZE(signature)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<request_t> request;
@@ -1771,10 +1690,10 @@ namespace wallet_rpc
       std::string signature_type;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(good);
-        KV_SERIALIZE(version);
-        KV_SERIALIZE(old);
-        KV_SERIALIZE(signature_type);
+        KV_SERIALIZE(good)
+        KV_SERIALIZE(version)
+        KV_SERIALIZE(old)
+        KV_SERIALIZE(signature_type)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<response_t> response;
@@ -1801,7 +1720,7 @@ namespace wallet_rpc
       std::string outputs_data_hex;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(outputs_data_hex);
+        KV_SERIALIZE(outputs_data_hex)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<response_t> response;
@@ -1814,7 +1733,7 @@ namespace wallet_rpc
       std::string outputs_data_hex;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(outputs_data_hex);
+        KV_SERIALIZE(outputs_data_hex)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<request_t> request;
@@ -1824,7 +1743,7 @@ namespace wallet_rpc
       uint64_t num_imported;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(num_imported);
+        KV_SERIALIZE(num_imported)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<response_t> response;
@@ -1837,7 +1756,7 @@ namespace wallet_rpc
       bool all;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE_OPT(all, false);
+        KV_SERIALIZE_OPT(all, false)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<request_t> request;
@@ -1848,8 +1767,8 @@ namespace wallet_rpc
       std::string signature;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(key_image);
-        KV_SERIALIZE(signature);
+        KV_SERIALIZE(key_image)
+        KV_SERIALIZE(signature)
       END_KV_SERIALIZE_MAP()
     };
 
@@ -1859,8 +1778,8 @@ namespace wallet_rpc
       std::vector<signed_key_image> signed_key_images;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(offset);
-        KV_SERIALIZE(signed_key_images);
+        KV_SERIALIZE(offset)
+        KV_SERIALIZE(signed_key_images)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<response_t> response;
@@ -1874,8 +1793,8 @@ namespace wallet_rpc
       std::string signature;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(key_image);
-        KV_SERIALIZE(signature);
+        KV_SERIALIZE(key_image)
+        KV_SERIALIZE(signature)
       END_KV_SERIALIZE_MAP()
     };
 
@@ -1885,8 +1804,8 @@ namespace wallet_rpc
       std::vector<signed_key_image> signed_key_images;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE_OPT(offset, (uint32_t)0);
-        KV_SERIALIZE(signed_key_images);
+        KV_SERIALIZE_OPT(offset, (uint32_t)0)
+        KV_SERIALIZE(signed_key_images)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<request_t> request;
@@ -1915,11 +1834,11 @@ namespace wallet_rpc
     std::string recipient_name;
 
     BEGIN_KV_SERIALIZE_MAP()
-      KV_SERIALIZE(address);
-      KV_SERIALIZE(payment_id);
-      KV_SERIALIZE(amount);
-      KV_SERIALIZE(tx_description);
-      KV_SERIALIZE(recipient_name);
+      KV_SERIALIZE(address)
+      KV_SERIALIZE(payment_id)
+      KV_SERIALIZE(amount)
+      KV_SERIALIZE(tx_description)
+      KV_SERIALIZE(recipient_name)
     END_KV_SERIALIZE_MAP()
   };
 
@@ -1959,8 +1878,8 @@ namespace wallet_rpc
       std::vector<std::string> unknown_parameters;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(uri);
-        KV_SERIALIZE(unknown_parameters);
+        KV_SERIALIZE(uri)
+        KV_SERIALIZE(unknown_parameters)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<response_t> response;
@@ -1985,7 +1904,7 @@ namespace wallet_rpc
       uint64_t index;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(index);
+        KV_SERIALIZE(index)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<response_t> response;
@@ -2062,7 +1981,7 @@ namespace wallet_rpc
       uint64_t index;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(index);
+        KV_SERIALIZE(index)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<request_t> request;
@@ -2110,8 +2029,8 @@ namespace wallet_rpc
       bool received_money;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(blocks_fetched);
-        KV_SERIALIZE(received_money);
+        KV_SERIALIZE(blocks_fetched)
+        KV_SERIALIZE(received_money)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<response_t> response;
@@ -2360,6 +2279,7 @@ namespace wallet_rpc
       std::string password;
       std::string language;
       bool autosave_current;
+      bool enable_multisig_experimental;
 
       BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE_OPT(restore_height, (uint64_t)0)
@@ -2369,6 +2289,7 @@ namespace wallet_rpc
       KV_SERIALIZE(password)
       KV_SERIALIZE(language)
       KV_SERIALIZE_OPT(autosave_current, true)
+      KV_SERIALIZE_OPT(enable_multisig_experimental, false)
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<request_t> request;
@@ -2402,12 +2323,14 @@ namespace wallet_rpc
     struct response_t
     {
       bool multisig;
+      bool kex_is_done;
       bool ready;
       uint32_t threshold;
       uint32_t total;
 
       BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(multisig)
+        KV_SERIALIZE(kex_is_done)
         KV_SERIALIZE(ready)
         KV_SERIALIZE(threshold)
         KV_SERIALIZE(total)
@@ -2558,6 +2481,35 @@ namespace wallet_rpc
     typedef epee::misc_utils::struct_init<response_t> response;
   };
 
+  struct COMMAND_RPC_GET_MULTISIG_KEY_EXCHANGE_BOOSTER
+  {
+    struct request_t
+    {
+      std::string password;
+      std::vector<std::string> multisig_info;
+      uint32_t threshold;
+      uint32_t num_signers;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(password)
+        KV_SERIALIZE(multisig_info)
+        KV_SERIALIZE(threshold)
+        KV_SERIALIZE(num_signers)
+      END_KV_SERIALIZE_MAP()
+    };
+    typedef epee::misc_utils::struct_init<request_t> request;
+
+    struct response_t
+    {
+      std::string multisig_info;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(multisig_info)
+      END_KV_SERIALIZE_MAP()
+    };
+    typedef epee::misc_utils::struct_init<response_t> response;
+  };
+
   struct COMMAND_RPC_SIGN_MULTISIG
   {
     struct request_t
@@ -2677,6 +2629,7 @@ namespace wallet_rpc
       std::string ssl_ca_file;
       std::vector<std::string> ssl_allowed_fingerprints;
       bool ssl_allow_any_cert;
+      std::string proxy;
 
       BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(address)
@@ -2689,6 +2642,7 @@ namespace wallet_rpc
         KV_SERIALIZE(ssl_ca_file)
         KV_SERIALIZE(ssl_allowed_fingerprints)
         KV_SERIALIZE_OPT(ssl_allow_any_cert, false)
+        KV_SERIALIZE_OPT(proxy, (std::string)"")
       END_KV_SERIALIZE_MAP()
     };
     typedef epee::misc_utils::struct_init<request_t> request;
@@ -2775,5 +2729,89 @@ namespace wallet_rpc
     typedef epee::misc_utils::struct_init<response_t> response;
   };
 
+  struct COMMAND_RPC_SETUP_BACKGROUND_SYNC
+  {
+    struct request_t
+    {
+      std::string background_sync_type;
+      std::string wallet_password;
+      std::string background_cache_password;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(background_sync_type)
+        KV_SERIALIZE(wallet_password)
+        KV_SERIALIZE_OPT(background_cache_password, (std::string)"")
+      END_KV_SERIALIZE_MAP()
+    };
+    typedef epee::misc_utils::struct_init<request_t> request;
+
+    struct response_t
+    {
+      BEGIN_KV_SERIALIZE_MAP()
+      END_KV_SERIALIZE_MAP()
+    };
+    typedef epee::misc_utils::struct_init<response_t> response;
+  };
+
+  struct COMMAND_RPC_START_BACKGROUND_SYNC
+  {
+    struct request_t
+    {
+      BEGIN_KV_SERIALIZE_MAP()
+      END_KV_SERIALIZE_MAP()
+    };
+    typedef epee::misc_utils::struct_init<request_t> request;
+
+    struct response_t
+    {
+      BEGIN_KV_SERIALIZE_MAP()
+      END_KV_SERIALIZE_MAP()
+    };
+    typedef epee::misc_utils::struct_init<response_t> response;
+  };
+
+  struct COMMAND_RPC_STOP_BACKGROUND_SYNC
+  {
+    struct request_t
+    {
+      std::string wallet_password;
+      std::string seed;
+      std::string seed_offset;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(wallet_password)
+        KV_SERIALIZE_OPT(seed, (std::string)"")
+        KV_SERIALIZE_OPT(seed_offset, (std::string)"")
+      END_KV_SERIALIZE_MAP()
+    };
+    typedef epee::misc_utils::struct_init<request_t> request;
+
+    struct response_t
+    {
+      BEGIN_KV_SERIALIZE_MAP()
+      END_KV_SERIALIZE_MAP()
+    };
+    typedef epee::misc_utils::struct_init<response_t> response;
+  };
+
+  struct COMMAND_RPC_GET_DEFAULT_FEE_PRIORITY
+  {
+    struct request_t
+    {
+      BEGIN_KV_SERIALIZE_MAP()
+      END_KV_SERIALIZE_MAP()
+    };
+    typedef epee::misc_utils::struct_init<request_t> request;
+
+    struct response_t
+    {
+      uint32_t priority;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(priority)
+      END_KV_SERIALIZE_MAP()
+    };
+    typedef epee::misc_utils::struct_init<response_t> response;
+  };
 }
 }
